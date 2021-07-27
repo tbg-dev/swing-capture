@@ -7,5 +7,7 @@ class tbgSwingCapture(c4aConanFile):
     description = "Swing Capture app for Teebox Golf."
     requires = (
         "c4a_core/0.0.1@tbg-dev/stable",
-        "gstreamer/1.18.4@tbg-dev/stable"
+        "gstreamer/1.18.4@tbg-dev/stable",
+        "ms-gsl/3.1.0",
+        "rxcpp/4.1.0"
     )

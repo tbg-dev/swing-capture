@@ -3,7 +3,7 @@
 #include <c4a/core/log.h>
 #include <gtest/gtest.h>
 
-#include <c4a/gstreamer/System.h>
+#include "gstreamer/Init.h"
 
 using namespace c4a::gst;
 
@@ -22,6 +22,5 @@ protected:
 //-----------------------------------------------------------------------------
 TEST_F(GstreamerTest, HelloWorld)
 {
-    System s;
-    s.run();
+    Init init;
 }
