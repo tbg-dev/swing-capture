@@ -2,10 +2,7 @@
 
 #include <c4a/core/log.h>
 #include <gtest/gtest.h>
-
-#include "gstreamer/Init.h"
-
-using namespace c4a::gst;
+#include <tbg/swingcam/ISwingCamera.h>
 
 static constexpr auto LGR = "GstreamerTest";
 
@@ -22,5 +19,6 @@ protected:
 //-----------------------------------------------------------------------------
 TEST_F(GstreamerTest, HelloWorld)
 {
-    Init init;
+    auto swingcam = tbg::ISwingCamera::create();
+    swingcam->run();
 }

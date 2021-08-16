@@ -1,4 +1,4 @@
-project (tbg_gstreamer)
+project (tbg_swingcam)
 
 include_directories(../../include)
 file(GLOB_RECURSE SRC_CPP *.cpp)

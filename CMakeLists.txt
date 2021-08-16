@@ -14,6 +14,6 @@ include(BuildCommon)
 # -----------------------------------------------------------------------------
 # Add all the things
 # -----------------------------------------------------------------------------
-add_libs(PREFIX tbg LIBS gstreamer)
+add_libs(PREFIX tbg LIBS swingcam)
 add_tests()
-add_apps(APPS swing-capture)
+add_apps(APPS swing-camera)
