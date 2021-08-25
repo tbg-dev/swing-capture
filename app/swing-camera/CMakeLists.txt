@@ -12,4 +12,6 @@ add_executable(${PROJECT_NAME}
 target_link_libraries(${PROJECT_NAME}
     ${CONAN_LIBS}
     ${BUILT_LIBS}
+    ${CONAN_LIBS}
+    ${BUILT_LIBS}
 )
