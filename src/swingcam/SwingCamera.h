@@ -15,7 +15,10 @@ public:
      SwingCamera();
     ~SwingCamera() override = default;
 
-    void run() override;
+    void run   () override;
+    void update() override;
+    void wait  () override;
+    void impact() override;
 
 private:
     // Pipeline and elements
@@ -27,13 +30,18 @@ private:
     c4a::gst::IElementPtr  mX264enc       { nullptr };
     c4a::gst::IElementPtr  mRtph264pay    { nullptr };
 
+    c4a::gst::IElementPtr  mRecordBranch  { nullptr };
+    c4a::gst::IElementPtr  mRecordTee     { nullptr };
+
     c4a::gst::IElementPtr  mImageBranch   { nullptr };
     c4a::gst::IElementPtr  mVideoRate     { nullptr };
     c4a::gst::IElementPtr  mJpegEnc       { nullptr };
     c4a::gst::IElementPtr  mTcpSink       { nullptr };
 
-    c4a::gst::IElementPtr  mRecordBranch  { nullptr };
-    c4a::gst::IElementPtr  mRecordQueue   { nullptr };
+    c4a::gst::IElementPtr  mFileBranch    { nullptr };
+    c4a::gst::IElementPtr  mFileConvert   { nullptr };
+    c4a::gst::IElementPtr  mFileMux       { nullptr };
+    c4a::gst::IElementPtr  mFileSink      { nullptr };
 
     c4a::gst::IElementPtr  mDisplayBranch { nullptr };
     c4a::gst::IElementPtr  mLocalDisplay  { nullptr };

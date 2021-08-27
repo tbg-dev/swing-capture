@@ -18,6 +18,15 @@ public:
 
     /** Run the camera */
     virtual void run() = 0;
+
+    /** Update the pipeline */
+    virtual void update() = 0;
+
+    /** Wait for the pipeline to complete */
+    virtual void wait() = 0;
+
+    /** Trigger impact (recording) */
+    virtual void impact() = 0;
 };
 
 } // namespace tbg

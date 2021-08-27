@@ -1,3 +1,4 @@
+#include <c4a/core/asio.h>
 #include <c4a/core/log.h>
 #include <c4a/net/ip.h>
 
@@ -14,16 +15,24 @@ SwingCamera::SwingCamera()
     , mTcpServer6(c4a::net::tcp::IServer::create())
 {
     // Start the TCP servers (on the same port)
-    if (
-        !startServer(mTcpServer4, c4a::net::ip::TCP_ANY_V4, 0) ||
-        !startServer(mTcpServer6, c4a::net::ip::TCP_ANY_V6, mTcpServer4->getEndpoint().port())
-    ) {
-        LOG_ERROR(LGR, "Couldn't start TCP servers for mDNS service");
+    if (!startServer(mTcpServer4, c4a::net::ip::TCP_ANY_V4, 0)) {
+        LOG_ERROR(LGR, "Couldn't start TCPv4 server for mDNS service");
         return;
+    }
+    if (!startServer(
+            mTcpServer6, c4a::net::ip::TCP_ANY_V6,
+            mTcpServer4->getEndpoint().port()
+    )) {
+        LOG_WARN(LGR, "Couldn't start TCPv6 server for mDNS service");
+        mTcpServer6 = nullptr;
     }
 
     // Create the camera source / tee
+    #ifdef defined(OS_LINUX)
     mCameraSource = c4a::gst::IElement::create("autovideosrc", "cameraSource");
+    #else
+    mCameraSource = c4a::gst::IElement::create("autovideosrc", "cameraSource");
+    #endif
     mCameraTee = c4a::gst::IElement::create("tee", "teeCamera");
 
     // Create the RTP streaming elements
@@ -33,16 +42,28 @@ SwingCamera::SwingCamera()
     mVideoSinkTee = c4a::gst::IElement::create("tee", "teeVideoSink");
     mVideoSinkTee->setProp("allow-not-linked", TRUE);
 
+    // Create the record path
+    mRecordBranch = c4a::gst::IElement::create("queue", "branchRecord");
+    // TODO: Attempting to create a 2s delay, but this doesn't work...
+    mRecordBranch->setProp("leaky", 2); // leak downstream (drop old buffers)
+    mRecordBranch->setProp("max-size-buffers", 480);
+    mRecordBranch->setProp("max-size-bytes", 100 * 1024 * 1024);
+    mRecordBranch->setProp("max-size-time", 2e9);
+    mRecordTee = c4a::gst::IElement::create("tee", "teeRecord");
+    mRecordTee->setProp("allow-not-linked", TRUE);
+
+    // Create the file sink
+    mFileBranch = c4a::gst::IElement::create("queue", "branchFile");
+    mFileConvert = c4a::gst::IElement::create("videoconvert", "fileconvert");
+    mFileMux = c4a::gst::IElement::create("avimux", "filemux");
+    mFileSink = c4a::gst::IElement::create("filesink", "filesink");
+    mFileSink->setProp("location", "shot.avi");
+
     // Create the jpg image stream
     mImageBranch = c4a::gst::IElement::create("queue", "branchImage");
     mVideoRate = c4a::gst::IElement::create("videorate", "videorate");
     mJpegEnc = c4a::gst::IElement::create("jpegenc", "jpegenc");
-    mTcpSink = c4a::gst::IElement::create("tcpserversink", "tcpsink");
-
-    // Create the record path
-    mRecordBranch = c4a::gst::IElement::create("queue", "branchRecord");
-    mRecordQueue = c4a::gst::IElement::create("queue", "recordQueue");
-    mRecordQueue->setProp("leaky", 2); // leak downstream (drop old buffers)
+    mTcpSink = c4a::gst::IElement::create("tcpclientsink", "tcpsink");
 
     // Create the video display elements
     mLocalDisplay = c4a::gst::IElement::create("autovideosink", "localDisplay");
@@ -58,12 +79,6 @@ SwingCamera::SwingCamera()
             nullptr
     );
 
-    GstCaps* fps5 = gst_caps_new_simple(
-            "video/x-raw",
-            "framerate", GST_TYPE_FRACTION, 5, 1,
-            nullptr
-    );
-
     // Configure RTP elements
     mX264enc
         ->setProp("speed-preset", 2) // superfast
@@ -75,7 +90,7 @@ SwingCamera::SwingCamera()
 
     // Configure TCP elements
     mTcpSink
-        ->setProp("host", "0.0.0.0")
+        ->setProp("host", "127.0.0.1")
          .setProp("port", 4321); // TODO: choose available port
 
 
@@ -88,16 +103,9 @@ SwingCamera::SwingCamera()
          .addAndLink(mX264enc, fps30)
          .addAndLink(mRtph264pay)
          .addAndLink(mVideoSinkTee)
-         // Jpeg Image sequence
+         // Record Video
          .setLinkTo(mCameraTee)
-         .addAndLink(mImageBranch)
-         .addAndLink(mVideoRate)
-         .addAndLink(mJpegEnc, fps5)
-         .addAndLink(mTcpSink)
-         // Record
-         .setLinkTo(mCameraTee)
-         .addAndLink(mRecordBranch)
-         .addAndLink(mRecordQueue);
+         .addAndLink(mRecordBranch);
 
     // Local display
     if (mLocalDisplay != nullptr) {
@@ -108,7 +116,11 @@ SwingCamera::SwingCamera()
     }
 
     LOG_TRACE(LGR, "Pipeline created: " + std::string(mPipeline->getName()));
+}
 
+//-----------------------------------------------------------------------------
+void SwingCamera::run()
+{
     // Start the pipeline
     mPipeline->play();
 
@@ -123,9 +135,77 @@ SwingCamera::SwingCamera()
 }
 
 //-----------------------------------------------------------------------------
-void SwingCamera::run()
+void SwingCamera::update()
+{
+    mPipeline->runIteration();
+}
+
+//-----------------------------------------------------------------------------
+void SwingCamera::wait()
 {
     mPipeline->waitForEnd();
+}
+
+//-----------------------------------------------------------------------------
+void SwingCamera::impact()
+{
+    LOG_TRACE(LGR, "Swing impact triggered");
+
+    GstCaps* fps30 = gst_caps_new_simple(
+            "video/x-raw",
+            "framerate", GST_TYPE_FRACTION, 30, 1,
+            nullptr
+    );
+
+    GstCaps* fps5 = gst_caps_new_simple(
+            "video/x-raw",
+            "framerate", GST_TYPE_FRACTION, 5, 1,
+            nullptr
+    );
+
+    LOG_TRACE(LGR, "impact 1");
+
+    // Attach record branch
+    mPipeline->pause()
+        .setLinkTo(mRecordBranch)
+        .addAndLink(mRecordTee)
+        // Attach file sink
+        .setLinkTo(mRecordTee)
+        .addAndLink(mFileBranch)
+        .addAndLink(mFileConvert, fps30)
+        .addAndLink(mFileMux)
+        .addAndLink(mFileSink);
+
+    LOG_TRACE(LGR, "impact 2");
+
+    // TODO: attach image sequence clients
+    // Attach image sequence
+    mPipeline->setLinkTo(mRecordTee)
+        .addAndLink(mImageBranch)
+        .addAndLink(mVideoRate)
+        .addAndLink(mJpegEnc, fps5)
+        .addAndLink(mTcpSink);
+
+    LOG_TRACE(LGR, "impact 3");
+
+    // Resume the pipeline
+    mPipeline->play();
+
+    LOG_TRACE(LGR, "impact 4");
+
+    // Schedule EOS
+    auto ioctx = c4a::core::asio::IContext::create();
+    ioctx->runAsync();
+
+    auto timer = c4a::core::asio::ITimer::createFromNow(
+            ioctx,
+            std::chrono::seconds(5));
+
+    timer->onExpire([this, timer] (const boost::system::error_code& ec) {
+        LOG_TRACE(LGR, "Timer expired");
+        mRecordTee->unlinkSource(mRecordBranch);
+        mRecordTee->getPad("sink")->sendEvent(gst_event_new_eos());
+    });
 }
 
 //-----------------------------------------------------------------------------
